@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap } from 'lucide-react';
+import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X } from 'lucide-react';
 
 const QUICK_PHRASES = [
   { icon: '👋', text: 'Xin chào, bạn khỏe không?' },
@@ -15,6 +15,7 @@ interface Message {
   id: string;
   role: 'user' | 'ai';
   text: string;
+  imageUrl?: string;
 }
 
 export default function App() {
@@ -31,7 +32,32 @@ export default function App() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const fileToGenerativePart = async (file: File) => {
+    const base64EncodedDataPromise = new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+      reader.readAsDataURL(file);
+    });
+    return {
+      inlineData: { data: await base64EncodedDataPromise, mimeType: file.type },
+    };
+  };
 
   useEffect(() => {
     // Check if already initialized in window (from index.html script)
@@ -72,22 +98,35 @@ export default function App() {
     });
   };
 
-  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en') => {
-    if (!text.trim() || !isReady || isLoading) return;
+  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en', imageFile?: File | null, previewUrl?: string | null) => {
+    if ((!text.trim() && !imageFile) || !isReady || isLoading) return;
 
-    const newUserMsg: Message = { id: crypto.randomUUID(), role: 'user', text };
+    const newUserMsg: Message = { id: crypto.randomUUID(), role: 'user', text, imageUrl: previewUrl || undefined };
     setMessages(prev => [...prev, newUserMsg]);
     setIsLoading(true);
 
     try {
       const model = (window as any).geminiModel;
       
-      const prompt = translationMode === 'en-vi'
-        ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`
-        : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`;
+      let prompt = "";
+      if (imageFile) {
+         prompt = translationMode === 'en-vi'
+          ? `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Việt. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`
+          : `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Anh. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`;
+      } else {
+         prompt = translationMode === 'en-vi'
+          ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`
+          : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`;
+      }
+
+      const parts: any[] = [{ text: prompt }];
+      if (imageFile) {
+        const imagePart = await fileToGenerativePart(imageFile);
+        parts.push(imagePart);
+      }
       
       const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        contents: [{ role: 'user', parts }],
         generationConfig: { temperature }
       });
       const responseText = result.response.text();
@@ -106,15 +145,17 @@ export default function App() {
       }]);
     } finally {
       setIsLoading(false);
+      setSelectedImage(null);
+      setImagePreview(null);
     }
   };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || !isReady || isLoading) return;
+    if ((!input.trim() && !selectedImage) || !isReady || isLoading) return;
     const userText = input.trim();
     setInput('');
-    await sendMessage(userText, mode);
+    await sendMessage(userText, mode, selectedImage, imagePreview);
   };
 
   const handleQuickPhrase = async (phrase: string) => {
@@ -211,6 +252,9 @@ export default function App() {
                   ? 'bg-blue-600 text-white rounded-tr-none' 
                   : 'bg-white text-gray-800 border border-gray-100 rounded-tl-none'
               }`}>
+                {msg.imageUrl && (
+                  <img src={msg.imageUrl} alt="Uploaded" className="max-w-full h-auto max-h-48 rounded-lg mb-2 object-contain bg-white/10" />
+                )}
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
               </div>
             </div>
@@ -253,25 +297,56 @@ export default function App() {
             ))}
           </div>
 
+          {imagePreview && (
+            <div className="relative inline-block mb-3">
+              <img src={imagePreview} alt="Preview" className="h-20 rounded-lg border border-gray-200 object-cover" />
+              <button 
+                type="button" 
+                onClick={() => { setSelectedImage(null); setImagePreview(null); }} 
+                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 shadow-sm"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
           <form onSubmit={handleSend} className="relative flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={mode === 'en-vi' 
-                ? "Nhập tiếng Anh cần dịch... (Enter để gửi, Shift+Enter để xuống dòng)" 
-                : "Nhập tiếng Việt cần dịch... (Enter để gửi, Shift+Enter để xuống dòng)"}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-32"
-              rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 4) : 1}
-              disabled={!isReady || isLoading}
+            <input 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              ref={fileInputRef} 
+              onChange={handleImageChange} 
             />
             <button
-              type="submit"
-              disabled={!input.trim() || !isReady || isLoading}
-              className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isReady || isLoading}
+              className="shrink-0 p-3.5 bg-gray-50 border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center h-[56px] w-[56px]"
+              title="Tải ảnh lên để dịch"
             >
-              <Send size={20} />
+              <ImageIcon size={22} />
             </button>
+            <div className="relative w-full">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={mode === 'en-vi' 
+                  ? "Nhập văn bản hoặc tải ảnh lên..." 
+                  : "Nhập văn bản hoặc tải ảnh lên..."}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-32"
+                rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 4) : 1}
+                disabled={!isReady || isLoading}
+              />
+              <button
+                type="submit"
+                disabled={(!input.trim() && !selectedImage) || !isReady || isLoading}
+                className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={20} />
+              </button>
+            </div>
           </form>
           <div className="text-center mt-2">
             <p className="text-xs text-gray-400">Sử dụng mô hình Gemini 3.1 Flash Lite thông qua Firebase AI SDK</p>
