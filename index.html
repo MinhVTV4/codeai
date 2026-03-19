@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase AI Logic MVP - Gemini Developer API (1.5 Flash)</title>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            margin: 20px; 
+            background-color: #f4f4f4; 
+            color: #333; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 90vh;
+        }
+        h1, h2 { 
+            color: #0056b3; 
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #controls { 
+            margin-bottom: 20px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        textarea { 
+            width: 100%; 
+            padding: 12px; 
+            margin-bottom: 15px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px; 
+            box-sizing: border-box; 
+            resize: vertical;
+            font-size: 16px;
+        }
+        button { 
+            padding: 12px 25px; 
+            background-color: #007bff; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            font-size: 17px;
+            transition: background-color 0.3s ease;
+            display: inline-flex; 
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-weight: 600;
+        }
+        button:hover { 
+            background-color: #0056b3; 
+        }
+        button:disabled {
+            background-color: #a0c3e6;
+            cursor: not-allowed;
+            opacity: 0.8;
+        }
+        #responseContainer { 
+            margin-top: 20px; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            background-color: #fff; 
+            border-radius: 4px; 
+            min-height: 120px; 
+            white-space: pre-wrap; 
+            word-wrap: break-word; 
+            text-align: left;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            position: relative; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.3s ease;
+        }
+        #responseContainer.loading {
+            background-color: #f8f9fa;
+            color: transparent; 
+        }
+        .error { 
+            color: red; 
+            font-weight: bold; 
+        }
+        .status-message {
+            margin-top: 15px;
+            font-weight: bold;
+            font-size: 0.95rem;
+            color: #555;
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+        }
+        .status-message.error-text { color: #dc3545; }
+        .status-message.success-text { color: #28a745; }
+        .status-message.info-text { color: #f59e0b; }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-left-color: #fff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        .large-spinner {
+            width: 40px;
+            height: 40px;
+            border-width: 5px;
+            border-left-color: #007bff;
+            margin: auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Thử nghiệm Firebase AI Logic với Gemini Developer API</h1>
+    <h2 class="text-sm">(Model: gemini-2.5-flash)</h2>
+
+    <div id="controls">
+        <textarea id="promptInput" rows="4" placeholder="Nhập lời nhắc của bạn ở đây... ví dụ: Kể một câu chuyện ngắn về một con rồng thân thiện."></textarea>
+        <button id="sendPromptButton">
+            <span id="buttonText">Gửi yêu cầu tới Gemini</span>
+            <div id="buttonSpinner" class="spinner hidden"></div>
+        </button>
+        <p id="statusMessage" class="status-message"></p>
+    </div>
+    
+    <h2>Phản hồi từ Gemini:</h2>
+    <div id="responseContainer">Chưa có phản hồi...</div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
+        import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-ai.js";
+
+  // Your web app's Firebase configuration
+    const firebaseConfig = {
+    apiKey: "AIzaSyDYLYuXkEl2mYZEGeKa73O43RLPy8pgz0M",
+    authDomain: "chandoan-7216d.firebaseapp.com",
+    projectId: "chandoan-7216d",
+    storageBucket: "chandoan-7216d.firebasestorage.app",
+    messagingSenderId: "609312923908",
+    appId: "1:609312923908:web:d456190e872dba66a23051"
+  };
+
+
+        const app = initializeApp(firebaseConfig);
+        console.log("Firebase App initialized!");
+        
+        const promptInput = document.getElementById('promptInput');
+        const sendPromptButton = document.getElementById('sendPromptButton');
+        const buttonText = document.getElementById('buttonText');
+        const buttonSpinner = document.getElementById('buttonSpinner');
+        const responseContainer = document.getElementById('responseContainer');
+        const statusMessage = document.getElementById('statusMessage');
+
+        function updateStatus(type, message) {
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.textContent = message;
+        }
+
+        updateStatus('info-text', "Firebase App đã khởi tạo.<br>Đang chờ khởi tạo AI Model...");
+
+        let model;
+        try {
+            const ai = getAI(app, { backend: new GoogleAIBackend() });
+            model = getGenerativeModel(ai, { model: "gemini-2.5-flash" });
+            console.log("Generative Model instance created with model 'gemini-3.1-flash-lite'!");
+            updateStatus('success-text', "Generative Model instance đã tạo. Sẵn sàng gửi yêu cầu.");
+        } catch (e) {
+            console.error("Lỗi khi khởi tạo AI Model:", e);
+            updateStatus('error-text', `Lỗi khởi tạo AI Model: ${e.message}.<br>Kiểm tra Console (F12) và đảm bảo Gemini API đã được kích hoạt cho dự án của bạn.`);
+        }
+
+        async function callGeminiAPI() {
+            if (!model) {
+                updateStatus('error-text', "Mô hình AI chưa được khởi tạo. Vui lòng kiểm tra console để biết lỗi.");
+                return;
+            }
+
+            const promptText = promptInput.value.trim();
+            if (!promptText) {
+                updateStatus('error-text', "Vui lòng nhập lời nhắc!");
+                return;
+            }
+
+            updateStatus('info-text', "Đang gửi yêu cầu đến Gemini...");
+            responseContainer.innerHTML = '<div class="large-spinner"></div>';
+            responseContainer.classList.add('loading');
+
+            buttonText.textContent = 'Đang gửi...';
+            buttonSpinner.classList.remove('hidden');
+            sendPromptButton.disabled = true;
+
+            try {
+                const result = await model.generateContent(promptText);
+                const response = result.response;
+                const text = response.text();
+
+                responseContainer.innerText = text;
+                responseContainer.classList.remove('loading');
+                updateStatus('success-text', "Đã nhận phản hồi từ Gemini.");
+                console.log("Response text:", text);
+
+            } catch (error) {
+                console.error("Lỗi khi gọi Gemini API:", error);
+                responseContainer.innerText = `Lỗi: ${error.message}. Vui lòng kiểm tra Console (F12) để biết thêm chi tiết.`;
+                responseContainer.classList.remove('loading');
+                updateStatus('error-text', `Lỗi khi gọi Gemini API: ${error.message}.`);
+            } finally {
+                buttonText.textContent = 'Gửi yêu cầu tới Gemini';
+                buttonSpinner.classList.add('hidden');
+                sendPromptButton.disabled = false;
+            }
+        }
+
+        if (sendPromptButton) {
+            sendPromptButton.addEventListener("click", callGeminiAPI);
+        } else {
+            console.error("Không tìm thấy nút 'sendPromptButton'.");
+            updateStatus('error-text', "Không tìm thấy nút gửi. Lỗi HTML?");
+        }
+    </script>
+</body>
+</html>
+

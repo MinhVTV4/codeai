@@ -1,0 +1,5 @@
+{
+  "name": "Firebase AI Logic MVP",
+  "description": "A simple UI to test the Gemini Developer API using the Firebase AI SDK.",
+  "requestFramePermissions": []
+}
