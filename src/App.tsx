@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X, Mic, Square } from 'lucide-react';
+import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X, Mic, Square, Volume2, StopCircle } from 'lucide-react';
 
 const QUICK_PHRASES = [
   { icon: '👋', text: 'Xin chào, bạn khỏe không?' },
@@ -17,6 +17,7 @@ interface Message {
   text: string;
   imageUrl?: string;
   audioUrl?: string;
+  lang?: 'vi' | 'en';
 }
 
 export default function App() {
@@ -28,7 +29,8 @@ export default function App() {
     {
       id: 'welcome',
       role: 'ai',
-      text: 'Xin chào! Tôi là trợ lý dịch thuật Tiếng Anh sang Tiếng Việt. Hãy nhập câu Tiếng Anh bạn muốn dịch nhé!'
+      text: 'Xin chào! Tôi là trợ lý dịch thuật Tiếng Anh sang Tiếng Việt. Hãy nhập câu Tiếng Anh bạn muốn dịch nhé!',
+      lang: 'vi'
     }
   ]);
   const [input, setInput] = useState('');
@@ -36,10 +38,44 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const speakText = (id: string, text: string, lang?: 'vi' | 'en') => {
+    if (!window.speechSynthesis) {
+      alert("Trình duyệt của bạn không hỗ trợ đọc văn bản.");
+      return;
+    }
+
+    if (speakingId === id) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const cleanText = text.replace(/[*#_]/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = lang === 'en' ? 'en-US' : 'vi-VN';
+    
+    utterance.onstart = () => setSpeakingId(id);
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+
+    window.speechSynthesis.speak(utterance);
+  };
 
   const startRecording = async () => {
     try {
@@ -155,7 +191,8 @@ export default function App() {
         role: 'ai',
         text: newMode === 'en-vi' 
           ? '🔄 Đã chuyển sang chế độ dịch: **Tiếng Anh ➔ Tiếng Việt**. Hãy nhập câu Tiếng Anh!' 
-          : '🔄 Đã chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**. Hãy nhập câu Tiếng Việt!'
+          : '🔄 Đã chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**. Hãy nhập câu Tiếng Việt!',
+        lang: 'vi'
       }]);
       return newMode;
     });
@@ -218,7 +255,8 @@ export default function App() {
       setMessages(prev => [...prev, { 
         id: crypto.randomUUID(), 
         role: 'ai', 
-        text: responseText 
+        text: responseText,
+        lang: translationMode === 'en-vi' ? 'vi' : 'en'
       }]);
     } catch (err: any) {
       console.error("Translation error:", err);
@@ -249,7 +287,8 @@ export default function App() {
       setMessages(msgs => [...msgs, {
         id: crypto.randomUUID(),
         role: 'ai',
-        text: '🔄 Đã tự động chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**.'
+        text: '🔄 Đã tự động chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**.',
+        lang: 'vi'
       }]);
     }
     await sendMessage(phrase, 'vi-en');
@@ -343,6 +382,32 @@ export default function App() {
                   <audio src={msg.audioUrl} controls className="max-w-full mb-2 h-10" />
                 )}
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                
+                {msg.role === 'ai' && (
+                  <div className="mt-3 flex justify-start">
+                    <button
+                      onClick={() => speakText(msg.id, msg.text, msg.lang)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                        speakingId === msg.id 
+                          ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' 
+                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200'
+                      }`}
+                      title={speakingId === msg.id ? "Dừng đọc" : "Đọc văn bản"}
+                    >
+                      {speakingId === msg.id ? (
+                        <>
+                          <StopCircle size={14} className="animate-pulse" />
+                          <span>Đang đọc...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Volume2 size={14} />
+                          <span>Đọc</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
