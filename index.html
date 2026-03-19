@@ -7,37 +7,25 @@
 </head>
 <body>
     <div id="root"></div>
-    
-    <!-- Giữ nguyên cấu hình AI từ Gemini Developer API và cách kết nối -->
+    <!-- Firebase AI Logic -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
-        import { getAI, getGenerativeModel, GoogleAIBackend } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-ai.js";
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+      import { getVertexAI, getGenerativeModel } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-vertexai-preview.js";
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyDYLYuXkEl2mYZEGeKa73O43RLPy8pgz0M",
-            authDomain: "chandoan-7216d.firebaseapp.com",
-            projectId: "chandoan-7216d",
-            storageBucket: "chandoan-7216d.firebasestorage.app",
-            messagingSenderId: "609312923908",
-            appId: "1:609312923908:web:d456190e872dba66a23051"
-        };
+      // Vui lòng dán lại cấu hình Firebase của bạn vào đây
+      const firebaseConfig = {
+        apiKey: "YOUR_API_KEY",
+        authDomain: "YOUR_AUTH_DOMAIN",
+        projectId: "YOUR_PROJECT_ID",
+        storageBucket: "YOUR_STORAGE_BUCKET",
+        messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+        appId: "YOUR_APP_ID"
+      };
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            const ai = getAI(app, { backend: new GoogleAIBackend() });
-            // Khởi tạo model và lưu vào window để React App có thể sử dụng lại cho nhiều chức năng
-            window.geminiModel = getGenerativeModel(ai, { model: "gemini-3.1-flash-lite-preview" });
-            
-            // Phát sự kiện thông báo AI đã sẵn sàng
-            window.dispatchEvent(new Event('gemini-ready'));
-            console.log("Firebase AI initialized successfully.");
-        } catch (error) {
-            console.error("Firebase AI Init Error:", error);
-            window.geminiInitError = error;
-            window.dispatchEvent(new Event('gemini-error'));
-        }
+      const app = initializeApp(firebaseConfig);
+      const vertexAI = getVertexAI(app);
+      window.generativeModel = getGenerativeModel(vertexAI, { model: "gemini-1.5-flash" });
     </script>
-    
     <!-- Load React App -->
     <script type="module" src="/src/main.tsx"></script>
 </body>
