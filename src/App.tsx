@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X, Mic, Square, Volume2, StopCircle } from 'lucide-react';
+import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, SlidersHorizontal, Zap, Image as ImageIcon, X, Mic, Square, Volume2, StopCircle } from 'lucide-react';
 
 const QUICK_PHRASES = [
   { icon: '👋', text: 'Xin chào, bạn khỏe không?' },
@@ -23,13 +23,12 @@ interface Message {
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<'en-vi' | 'vi-en'>('en-vi');
   const [temperature, setTemperature] = useState<number>(0.3);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       role: 'ai',
-      text: 'Xin chào! Tôi là trợ lý dịch thuật Tiếng Anh sang Tiếng Việt. Hãy nhập câu Tiếng Anh bạn muốn dịch nhé!',
+      text: 'Xin chào! Tôi là trợ lý dịch thuật song ngữ Anh ↔ Việt. Hãy nhập văn bản, tải ảnh hoặc ghi âm bằng bất kỳ ngôn ngữ nào, tôi sẽ tự động nhận diện và dịch sang ngôn ngữ còn lại!',
       lang: 'vi'
     }
   ]);
@@ -110,7 +109,7 @@ export default function App() {
         stream.getTracks().forEach(track => track.stop());
         
         // Send to Gemini
-        await sendMessage('', mode, null, null, audioBlob, audioUrl);
+        await sendMessage('', null, null, audioBlob, audioUrl);
       };
 
       mediaRecorder.start();
@@ -183,22 +182,7 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const toggleMode = () => {
-    setMode(prev => {
-      const newMode = prev === 'en-vi' ? 'vi-en' : 'en-vi';
-      setMessages(msgs => [...msgs, {
-        id: crypto.randomUUID(),
-        role: 'ai',
-        text: newMode === 'en-vi' 
-          ? '🔄 Đã chuyển sang chế độ dịch: **Tiếng Anh ➔ Tiếng Việt**. Hãy nhập câu Tiếng Anh!' 
-          : '🔄 Đã chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**. Hãy nhập câu Tiếng Việt!',
-        lang: 'vi'
-      }]);
-      return newMode;
-    });
-  };
-
-  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en', imageFile?: File | null, previewUrl?: string | null, audioBlob?: Blob, audioUrl?: string) => {
+  const sendMessage = async (text: string, imageFile?: File | null, previewUrl?: string | null, audioBlob?: Blob, audioUrl?: string) => {
     if ((!text.trim() && !imageFile && !audioBlob) || !isReady || isLoading) return;
 
     const newUserMsg: Message = { 
@@ -214,15 +198,18 @@ export default function App() {
     try {
       const model = (window as any).geminiModel;
       
-      let prompt = "";
-      const parts: any[] = [];
+      let prompt = `Bạn là một chuyên gia dịch thuật song ngữ Anh - Việt. 
+Hãy phân tích dữ liệu đầu vào (văn bản, hình ảnh, hoặc âm thanh).
+1. Tự động nhận diện ngôn ngữ của đầu vào (tiếng Anh hoặc tiếng Việt). Nếu là hình ảnh/âm thanh, hãy trích xuất nội dung trước.
+2. Dịch nội dung đó sang ngôn ngữ còn lại.
+Chỉ trả về kết quả dưới dạng JSON với 2 trường:
+- "detected_lang": "en" hoặc "vi" (ngôn ngữ bạn nhận diện được)
+- "translation": "..." (kết quả dịch sang ngôn ngữ kia)
+Không giải thích gì thêm.`;
+
+      const parts: any[] = [{ text: prompt }];
 
       if (audioBlob) {
-         prompt = translationMode === 'en-vi'
-          ? `Bạn là một chuyên gia dịch thuật. Hãy nghe đoạn âm thanh này và dịch nội dung sang Tiếng Việt. Chỉ trả về kết quả dịch, không giải thích gì thêm.`
-          : `Bạn là một chuyên gia dịch thuật. Hãy nghe đoạn âm thanh này và dịch nội dung sang Tiếng Anh. Chỉ trả về kết quả dịch, không giải thích gì thêm.`;
-         parts.push({ text: prompt });
-         
          const base64EncodedDataPromise = new Promise<string>((resolve) => {
            const reader = new FileReader();
            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
@@ -233,30 +220,46 @@ export default function App() {
            inlineData: { data: await base64EncodedDataPromise, mimeType: cleanMimeType }
          });
       } else if (imageFile) {
-         prompt = translationMode === 'en-vi'
-          ? `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Việt. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`
-          : `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Anh. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`;
-         parts.push({ text: prompt });
+         if (text.trim()) {
+           parts.push({ text: `Ghi chú thêm của người dùng: "${text}"` });
+         }
          const imagePart = await fileToGenerativePart(imageFile);
          parts.push(imagePart);
       } else {
-         prompt = translationMode === 'en-vi'
-          ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`
-          : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`;
-         parts.push({ text: prompt });
+         parts.push({ text: `Nội dung cần dịch:\n\n"${text}"` });
       }
 
       const result = await model.generateContent({
         contents: [{ role: 'user', parts }],
-        generationConfig: { temperature }
+        generationConfig: { 
+          temperature,
+          responseMimeType: "application/json"
+        }
       });
       const responseText = result.response.text();
+      
+      let parsedResponse;
+      try {
+        parsedResponse = JSON.parse(responseText);
+      } catch (e) {
+        // Fallback in case AI doesn't return proper JSON
+        const match = responseText.match(/```json\n([\s\S]*?)\n```/);
+        if (match) {
+          parsedResponse = JSON.parse(match[1]);
+        } else {
+          parsedResponse = { translation: responseText, detected_lang: 'en' };
+        }
+      }
+      
+      const translatedText = parsedResponse.translation || responseText;
+      const detectedLang = parsedResponse.detected_lang || 'en';
+      const targetLang = detectedLang === 'vi' ? 'en' : 'vi';
       
       setMessages(prev => [...prev, { 
         id: crypto.randomUUID(), 
         role: 'ai', 
-        text: responseText,
-        lang: translationMode === 'en-vi' ? 'vi' : 'en'
+        text: translatedText,
+        lang: targetLang
       }]);
     } catch (err: any) {
       console.error("Translation error:", err);
@@ -277,21 +280,12 @@ export default function App() {
     if ((!input.trim() && !selectedImage) || !isReady || isLoading) return;
     const userText = input.trim();
     setInput('');
-    await sendMessage(userText, mode, selectedImage, imagePreview);
+    await sendMessage(userText, selectedImage, imagePreview);
   };
 
   const handleQuickPhrase = async (phrase: string) => {
     if (!isReady || isLoading) return;
-    if (mode !== 'vi-en') {
-      setMode('vi-en');
-      setMessages(msgs => [...msgs, {
-        id: crypto.randomUUID(),
-        role: 'ai',
-        text: '🔄 Đã tự động chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**.',
-        lang: 'vi'
-      }]);
-    }
-    await sendMessage(phrase, 'vi-en');
+    await sendMessage(phrase);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -312,15 +306,10 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold text-gray-800">AI Translator</h1>
             <div className="mt-1">
-              <button 
-                onClick={toggleMode}
-                className="flex items-center gap-2 px-2.5 py-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md text-xs font-medium text-gray-600 transition-colors"
-                title="Nhấn để đổi chiều dịch"
-              >
-                <span className={mode === 'en-vi' ? 'text-blue-600 font-bold' : ''}>English</span>
-                <ArrowRightLeft size={12} className="text-gray-400" />
-                <span className={mode === 'vi-en' ? 'text-blue-600 font-bold' : ''}>Vietnamese</span>
-              </button>
+              <div className="flex items-center gap-2 px-2.5 py-1 bg-blue-50 border border-blue-100 rounded-md text-xs font-medium text-blue-700">
+                <Sparkles size={12} />
+                <span>Tự động nhận diện ngôn ngữ (Anh ↔ Việt)</span>
+              </div>
             </div>
           </div>
         </div>
@@ -499,7 +488,7 @@ export default function App() {
                 onKeyDown={handleKeyDown}
                 placeholder={isRecording 
                   ? "Đang ghi âm... Nhấn nút vuông màu đỏ để dừng và gửi." 
-                  : (mode === 'en-vi' ? "Nhập văn bản hoặc tải ảnh lên..." : "Nhập văn bản hoặc tải ảnh lên...")}
+                  : "Nhập văn bản hoặc tải ảnh lên..."}
                 className={`w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-32 ${isRecording ? 'text-red-500 font-medium bg-red-50' : ''}`}
                 rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 4) : 1}
                 disabled={!isReady || isLoading || isRecording}
