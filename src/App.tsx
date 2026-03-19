@@ -3,6 +3,7 @@ import { Menu, AlertCircle, Loader2, Sparkles } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Translator from './pages/Translator';
 import ImageAnalyzer from './pages/ImageAnalyzer';
+import ImageDescriber from './pages/ImageDescriber';
 
 export default function App() {
   const [currentApp, setCurrentApp] = useState('translator');
@@ -91,6 +92,7 @@ export default function App() {
         <main className="flex-1 overflow-hidden relative">
           {currentApp === 'translator' && <Translator isReady={isReady} />}
           {currentApp === 'analyzer' && <ImageAnalyzer isReady={isReady} />}
+          {currentApp === 'describer' && <ImageDescriber isReady={isReady} />}
         </main>
       </div>
     </div>

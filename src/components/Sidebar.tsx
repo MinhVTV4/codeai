@@ -1,5 +1,5 @@
 import React from 'react';
-import { Languages, ScanSearch, Menu, X, Sparkles } from 'lucide-react';
+import { Languages, ScanSearch, Menu, X, Sparkles, MessageSquareText } from 'lucide-react';
 
 interface SidebarProps {
   currentApp: string;
@@ -11,7 +11,8 @@ interface SidebarProps {
 export default function Sidebar({ currentApp, setCurrentApp, isOpen, setIsOpen }: SidebarProps) {
   const menuItems = [
     { id: 'translator', icon: Languages, label: 'Dịch thuật AI' },
-    { id: 'analyzer', icon: ScanSearch, label: 'Phân tích Ảnh' },
+    { id: 'analyzer', icon: ScanSearch, label: 'Đếm & Tìm Vật thể' },
+    { id: 'describer', icon: MessageSquareText, label: 'Mô tả Không gian' },
   ];
 
   return (
