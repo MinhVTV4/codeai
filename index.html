@@ -26,7 +26,7 @@
             const app = initializeApp(firebaseConfig);
             const ai = getAI(app, { backend: new GoogleAIBackend() });
             // Khởi tạo model và lưu vào window để React App có thể sử dụng lại cho nhiều chức năng
-            window.geminiModel = getGenerativeModel(ai, { model: "gemini-2.5-flash" });
+            window.geminiModel = getGenerativeModel(ai, { model: "gemini-3.1-flash-lite-preview" });
             
             // Phát sự kiện thông báo AI đã sẵn sàng
             window.dispatchEvent(new Event('gemini-ready'));

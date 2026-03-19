@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal } from 'lucide-react';
+import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap } from 'lucide-react';
+
+const QUICK_PHRASES = [
+  { icon: '👋', text: 'Xin chào, bạn khỏe không?' },
+  { icon: '🤝', text: 'Rất vui được gặp bạn.' },
+  { icon: '🗺️', text: 'Xin lỗi, nhà vệ sinh ở đâu?' },
+  { icon: '🚕', text: 'Làm sao để đi đến sân bay?' },
+  { icon: '💰', text: 'Cái này giá bao nhiêu?' },
+  { icon: '🍽️', text: 'Cho tôi xem thực đơn nhé.' },
+  { icon: '🗣️', text: 'Bạn có thể nói chậm lại được không?' },
+];
 
 interface Message {
   id: string;
@@ -62,24 +72,19 @@ export default function App() {
     });
   };
 
-  const handleSend = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || !isReady || isLoading) return;
+  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en') => {
+    if (!text.trim() || !isReady || isLoading) return;
 
-    const userText = input.trim();
-    setInput('');
-    
-    const newUserMsg: Message = { id: crypto.randomUUID(), role: 'user', text: userText };
+    const newUserMsg: Message = { id: crypto.randomUUID(), role: 'user', text };
     setMessages(prev => [...prev, newUserMsg]);
     setIsLoading(true);
 
     try {
       const model = (window as any).geminiModel;
       
-      // Prompt engineering for translation based on current mode
-      const prompt = mode === 'en-vi'
-        ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${userText}"`
-        : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${userText}"`;
+      const prompt = translationMode === 'en-vi'
+        ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`
+        : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`;
       
       const result = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -102,6 +107,27 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() || !isReady || isLoading) return;
+    const userText = input.trim();
+    setInput('');
+    await sendMessage(userText, mode);
+  };
+
+  const handleQuickPhrase = async (phrase: string) => {
+    if (!isReady || isLoading) return;
+    if (mode !== 'vi-en') {
+      setMode('vi-en');
+      setMessages(msgs => [...msgs, {
+        id: crypto.randomUUID(),
+        role: 'ai',
+        text: '🔄 Đã tự động chuyển sang chế độ dịch: **Tiếng Việt ➔ Tiếng Anh**.'
+      }]);
+    }
+    await sendMessage(phrase, 'vi-en');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -208,6 +234,25 @@ export default function App() {
       {/* Input Area */}
       <footer className="bg-white border-t border-gray-200 p-4 sm:p-6 shrink-0">
         <div className="max-w-4xl mx-auto relative">
+          {/* Quick Phrases */}
+          <div className="mb-3 flex gap-2 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+              <Zap size={14} className="fill-blue-600" />
+              Mẫu câu:
+            </div>
+            {QUICK_PHRASES.map((phrase, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleQuickPhrase(phrase.text)}
+                disabled={!isReady || isLoading}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-200 rounded-full text-sm text-gray-700 hover:text-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span>{phrase.icon}</span>
+                <span>{phrase.text}</span>
+              </button>
+            ))}
+          </div>
+
           <form onSubmit={handleSend} className="relative flex items-end gap-2">
             <textarea
               value={input}
@@ -229,7 +274,7 @@ export default function App() {
             </button>
           </form>
           <div className="text-center mt-2">
-            <p className="text-xs text-gray-400">Sử dụng mô hình Gemini 2.5 Flash thông qua Firebase AI SDK</p>
+            <p className="text-xs text-gray-400">Sử dụng mô hình Gemini 3.1 Flash Lite thông qua Firebase AI SDK</p>
           </div>
         </div>
       </footer>
