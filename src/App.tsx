@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X } from 'lucide-react';
+import { Send, Loader2, Languages, AlertCircle, Bot, User, Sparkles, ArrowRightLeft, SlidersHorizontal, Zap, Image as ImageIcon, X, Mic, Square } from 'lucide-react';
 
 const QUICK_PHRASES = [
   { icon: '👋', text: 'Xin chào, bạn khỏe không?' },
@@ -16,6 +16,7 @@ interface Message {
   role: 'user' | 'ai';
   text: string;
   imageUrl?: string;
+  audioUrl?: string;
 }
 
 export default function App() {
@@ -34,8 +35,70 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      let mimeType = '';
+      if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+        mimeType = 'audio/ogg';
+      }
+
+      const options = mimeType ? { mimeType } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const finalMimeType = mediaRecorder.mimeType || mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: finalMimeType });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Send to Gemini
+        await sendMessage('', mode, null, null, audioBlob, audioUrl);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone:", err);
+      alert("Không thể truy cập micro. Vui lòng kiểm tra quyền.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,10 +161,16 @@ export default function App() {
     });
   };
 
-  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en', imageFile?: File | null, previewUrl?: string | null) => {
-    if ((!text.trim() && !imageFile) || !isReady || isLoading) return;
+  const sendMessage = async (text: string, translationMode: 'en-vi' | 'vi-en', imageFile?: File | null, previewUrl?: string | null, audioBlob?: Blob, audioUrl?: string) => {
+    if ((!text.trim() && !imageFile && !audioBlob) || !isReady || isLoading) return;
 
-    const newUserMsg: Message = { id: crypto.randomUUID(), role: 'user', text, imageUrl: previewUrl || undefined };
+    const newUserMsg: Message = { 
+      id: crypto.randomUUID(), 
+      role: 'user', 
+      text: text || (audioBlob ? '🎤 [Đoạn ghi âm]' : ''), 
+      imageUrl: previewUrl || undefined,
+      audioUrl: audioUrl || undefined
+    };
     setMessages(prev => [...prev, newUserMsg]);
     setIsLoading(true);
 
@@ -109,22 +178,37 @@ export default function App() {
       const model = (window as any).geminiModel;
       
       let prompt = "";
-      if (imageFile) {
+      const parts: any[] = [];
+
+      if (audioBlob) {
+         prompt = translationMode === 'en-vi'
+          ? `Bạn là một chuyên gia dịch thuật. Hãy nghe đoạn âm thanh này và dịch nội dung sang Tiếng Việt. Chỉ trả về kết quả dịch, không giải thích gì thêm.`
+          : `Bạn là một chuyên gia dịch thuật. Hãy nghe đoạn âm thanh này và dịch nội dung sang Tiếng Anh. Chỉ trả về kết quả dịch, không giải thích gì thêm.`;
+         parts.push({ text: prompt });
+         
+         const base64EncodedDataPromise = new Promise<string>((resolve) => {
+           const reader = new FileReader();
+           reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+           reader.readAsDataURL(audioBlob);
+         });
+         const cleanMimeType = audioBlob.type.split(';')[0] || 'audio/webm';
+         parts.push({
+           inlineData: { data: await base64EncodedDataPromise, mimeType: cleanMimeType }
+         });
+      } else if (imageFile) {
          prompt = translationMode === 'en-vi'
           ? `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Việt. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`
           : `Bạn là một chuyên gia dịch thuật. Hãy trích xuất văn bản trong bức ảnh này và dịch nó sang Tiếng Anh. Chỉ trả về kết quả dịch, không giải thích gì thêm. Nếu có thêm ghi chú của người dùng: "${text}", hãy chú ý đến nó.`;
+         parts.push({ text: prompt });
+         const imagePart = await fileToGenerativePart(imageFile);
+         parts.push(imagePart);
       } else {
          prompt = translationMode === 'en-vi'
           ? `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Anh sau sang Tiếng Việt một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`
           : `Bạn là một chuyên gia dịch thuật. Hãy dịch đoạn văn bản Tiếng Việt sau sang Tiếng Anh một cách tự nhiên, chính xác và giữ nguyên ngữ cảnh. Chỉ trả về kết quả dịch, không giải thích gì thêm:\n\n"${text}"`;
+         parts.push({ text: prompt });
       }
 
-      const parts: any[] = [{ text: prompt }];
-      if (imageFile) {
-        const imagePart = await fileToGenerativePart(imageFile);
-        parts.push(imagePart);
-      }
-      
       const result = await model.generateContent({
         contents: [{ role: 'user', parts }],
         generationConfig: { temperature }
@@ -255,6 +339,9 @@ export default function App() {
                 {msg.imageUrl && (
                   <img src={msg.imageUrl} alt="Uploaded" className="max-w-full h-auto max-h-48 rounded-lg mb-2 object-contain bg-white/10" />
                 )}
+                {msg.audioUrl && (
+                  <audio src={msg.audioUrl} controls className="max-w-full mb-2 h-10" />
+                )}
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
               </div>
             </div>
@@ -311,6 +398,19 @@ export default function App() {
           )}
 
           <form onSubmit={handleSend} className="relative flex items-end gap-2">
+            <button
+              type="button"
+              onClick={toggleRecording}
+              disabled={!isReady || isLoading}
+              className={`shrink-0 p-3.5 border rounded-xl transition-colors flex items-center justify-center h-[56px] w-[56px] ${
+                isRecording 
+                  ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100 animate-pulse' 
+                  : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed'
+              }`}
+              title={isRecording ? "Dừng ghi âm và gửi" : "Ghi âm để dịch"}
+            >
+              {isRecording ? <Square size={22} className="fill-red-600" /> : <Mic size={22} />}
+            </button>
             <input 
               type="file" 
               accept="image/*" 
@@ -321,7 +421,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={!isReady || isLoading}
+              disabled={!isReady || isLoading || isRecording}
               className="shrink-0 p-3.5 bg-gray-50 border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-100 hover:text-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center h-[56px] w-[56px]"
               title="Tải ảnh lên để dịch"
             >
@@ -332,16 +432,16 @@ export default function App() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={mode === 'en-vi' 
-                  ? "Nhập văn bản hoặc tải ảnh lên..." 
-                  : "Nhập văn bản hoặc tải ảnh lên..."}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-32"
+                placeholder={isRecording 
+                  ? "Đang ghi âm... Nhấn nút vuông màu đỏ để dừng và gửi." 
+                  : (mode === 'en-vi' ? "Nhập văn bản hoặc tải ảnh lên..." : "Nhập văn bản hoặc tải ảnh lên...")}
+                className={`w-full bg-gray-50 border border-gray-200 rounded-xl py-3 pl-4 pr-14 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[56px] max-h-32 ${isRecording ? 'text-red-500 font-medium bg-red-50' : ''}`}
                 rows={input.split('\n').length > 1 ? Math.min(input.split('\n').length, 4) : 1}
-                disabled={!isReady || isLoading}
+                disabled={!isReady || isLoading || isRecording}
               />
               <button
                 type="submit"
-                disabled={(!input.trim() && !selectedImage) || !isReady || isLoading}
+                disabled={(!input.trim() && !selectedImage) || !isReady || isLoading || isRecording}
                 className="absolute right-2 bottom-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
                 <Send size={20} />
